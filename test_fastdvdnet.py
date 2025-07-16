@@ -5,6 +5,7 @@ Denoise all the sequences existent in a given folder using FastDVDnet.
 import os
 import argparse
 import time
+import numpy as np
 import cv2
 import torch
 import torch.nn as nn
@@ -33,12 +34,18 @@ def save_out_seq(seqnoisy, seqclean, save_dir, sigmaval, suffix, save_noisy):
 			out_name = os.path.join(save_dir,\
 					('n{}_FastDVDnet_{}_{}').format(sigmaval, suffix, idx) + fext)
 
-		# Save result
-		if save_noisy:
-			noisyimg = variable_to_cv2_image(seqnoisy[idx].clamp(0., 1.))
-			cv2.imwrite(noisy_name, noisyimg)
+		# # Save result
+		# if save_noisy:
+		# 	noisyimg = variable_to_cv2_image(seqnoisy[idx].clamp(0., 1.))
+		# 	cv2.imwrite(noisy_name, noisyimg)
 
 		outimg = variable_to_cv2_image(seqclean[idx].unsqueeze(dim=0))
+
+		if save_noisy:
+			noisyimg = variable_to_cv2_image(seqnoisy[idx].clamp(0., 1.))
+			outimg = np.concatenate([noisyimg, outimg], axis=1) # concatenate noisy and denoised images
+			# cv2.imwrite(noisy_name, noisyimg)
+
 		cv2.imwrite(out_name, outimg)
 
 def test_fastdvdnet(**args):
@@ -87,20 +94,47 @@ def test_fastdvdnet(**args):
 
 	# Sets the model in evaluation mode (e.g. it removes BN)
 	model_temp.eval()
+	noisestd = torch.FloatTensor([args['noise_sigma']]).to(device)
+
+	"""
+	my_model = model_temp.module.cpu()
+	scripted_module = torch.jit.script(my_model)
+	# from torch.utils.mobile_optimizer import optimize_for_mobile
+	# optimized_scripted_module = optimize_for_mobile(scripted_module)
+	# optimized_scripted_module._save_for_lite_interpreter("pretrained_models/model_lite.ptl")
+
+	# to onnx
+	inputs = torch.randn((1, 3, 640, 640))
+	noise_sigma = torch.FloatTensor([args['noise_sigma']])
+	
+	scripted_module.for_onnx = True
+	out = scripted_module(inputs, noise_sigma)
+	# dynamicaxes = {}
+	# dynamicaxes['inputs'] = {
+	# 	0:"batch",
+	# 	2:"height",
+	# 	3:"width"
+	# }
+	torch.onnx.export(scripted_module, (inputs, noise_sigma), 
+				   f'pretrained_models/fastdvdnet.onnx',
+				   input_names=['inputs','noise_sigma'],
+				   output_names=['outputs'],)
+				   # dynamic_axes = dynamicaxes)
+	"""
 
 	with torch.no_grad():
 		# process data
 		seq, _, _ = open_sequence(args['test_path'],\
-									args['gray'],\
-									expand_if_needed=False,\
-									max_num_fr=args['max_num_fr_per_seq'])
+								  args['gray'],\
+								  expand_if_needed=False,\
+								  max_num_fr=args['max_num_fr_per_seq'])
 		seq = torch.from_numpy(seq).to(device)
 		seq_time = time.time()
 
 		# Add noise
-		noise = torch.empty_like(seq).normal_(mean=0, std=args['noise_sigma']).to(device)
-		seqn = seq + noise
-		noisestd = torch.FloatTensor([args['noise_sigma']]).to(device)
+		# noise = torch.empty_like(seq).normal_(mean=0, std=args['noise_sigma']).to(device)
+		# seqn = seq + noise
+		seqn = seq.clone()
 
 		denframes = denoise_seq_fastdvdnet(seq=seqn,\
 										noise_std=noisestd,\
@@ -109,15 +143,15 @@ def test_fastdvdnet(**args):
 
 	# Compute PSNR and log it
 	stop_time = time.time()
-	psnr = batch_psnr(denframes, seq, 1.)
-	psnr_noisy = batch_psnr(seqn.squeeze(), seq, 1.)
+	# psnr = batch_psnr(denframes, seq, 1.)
+	# psnr_noisy = batch_psnr(seqn.squeeze(), seq, 1.)
 	loadtime = (seq_time - start_time)
 	runtime = (stop_time - seq_time)
 	seq_length = seq.size()[0]
 	logger.info("Finished denoising {}".format(args['test_path']))
 	logger.info("\tDenoised {} frames in {:.3f}s, loaded seq in {:.3f}s".\
 				 format(seq_length, runtime, loadtime))
-	logger.info("\tPSNR noisy {:.4f}dB, PSNR result {:.4f}dB".format(psnr_noisy, psnr))
+	# logger.info("\tPSNR noisy {:.4f}dB, PSNR result {:.4f}dB".format(psnr_noisy, psnr))
 
 	# Save outputs
 	if not args['dont_save_results']:
@@ -132,7 +166,7 @@ if __name__ == "__main__":
 	# Parse arguments
 	parser = argparse.ArgumentParser(description="Denoise a sequence with FastDVDnet")
 	parser.add_argument("--model_file", type=str,\
-						default="./model.pth", \
+						default="./pretrained_models/model.pth", \
 						help='path to model of the pretrained denoiser')
 	parser.add_argument("--test_path", type=str, default="./data/rgb/Kodak24", \
 						help='path to sequence to denoise')

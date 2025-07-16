@@ -143,9 +143,12 @@ class FastDVDnet(nn.Module):
 	def __init__(self, num_input_frames=5):
 		super(FastDVDnet, self).__init__()
 		self.num_input_frames = num_input_frames
+		self.for_onnx = False
+
 		# Define models of each denoising stage
 		self.temp1 = DenBlock(num_input_frames=3)
 		self.temp2 = DenBlock(num_input_frames=3)
+
 		# Init weights
 		self.reset_params()
 
@@ -158,13 +161,18 @@ class FastDVDnet(nn.Module):
 		for _, m in enumerate(self.modules()):
 			self.weight_init(m)
 
-	def forward(self, x, noise_map):
+	def _forward_5(self, x, noise_map):
 		'''Args:
 			x: Tensor, [N, num_frames*C, H, W] in the [0., 1.] range
 			noise_map: Tensor [N, 1, H, W] in the [0., 1.] range
 		'''
 		# Unpack inputs
-		(x0, x1, x2, x3, x4) = tuple(x[:, 3*m:3*m+3, :, :] for m in range(self.num_input_frames))
+		# (x0, x1, x2, x3, x4) = tuple(x[:, 3*m:3*m+3, :, :] for m in range(self.num_input_frames))
+		x0 = x[:, 3*0:3*0+3, :, :]
+		x1 = x[:, 3*1:3*1+3, :, :]
+		x2 = x[:, 3*2:3*2+3, :, :]
+		x3 = x[:, 3*3:3*3+3, :, :]
+		x4 = x[:, 3*4:3*4+3, :, :]
 
 		# First stage
 		x20 = self.temp1(x0, x1, x2, noise_map)
@@ -173,5 +181,28 @@ class FastDVDnet(nn.Module):
 
 		#Second stage
 		x = self.temp2(x20, x21, x22, noise_map)
-
 		return x
+	
+	def _forward_1(self, x, noise_map):
+		'''Args:
+			x: Tensor, [N, num_frames*C, H, W] in the [0., 1.] range
+			noise_map: Tensor [N, 1, H, W] in the [0., 1.] range
+		'''
+		return self.temp1(x, x, x, noise_map)
+
+	def forward(self, x, noise_sigma):
+		'''Args:
+			x: Tensor, [N, num_frames*C, H, W] in the [0., 1.] range
+			noise_sigma: Tensor [1] in the [0., 1.] range
+		'''
+		noise_map = torch.full_like(x[:, 0:1, :, :], noise_sigma.item())
+		if not self.for_onnx:
+			x = self._forward_5(x, noise_map)
+			return x
+		else:
+			x = self._forward_1(x, noise_map)
+			# x = x.permute(0, 2, 3, 1)  # [N, H, W, C]
+			# x = torch.clamp(x, 0., 1.)
+			# x = torch.concat([torch.ones_like(x[:, :, :, 0:1]), x], dim=-1)  # [N, H, W, C+1]
+			# return (x * 255.).to(torch.uint8)
+			return x

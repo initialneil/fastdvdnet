@@ -20,7 +20,7 @@ def temp_denoise(model, noisyframe, sigma_noise):
 		expanded_w = 4-expanded_w
 	padexp = (0, expanded_w, 0, expanded_h)
 	noisyframe = F.pad(input=noisyframe, pad=padexp, mode='reflect')
-	sigma_noise = F.pad(input=sigma_noise, pad=padexp, mode='reflect')
+	# sigma_noise = F.pad(input=sigma_noise, pad=padexp, mode='reflect')
 
 	# denoise
 	out = torch.clamp(model(noisyframe, sigma_noise), 0., 1.)
@@ -50,7 +50,7 @@ def denoise_seq_fastdvdnet(seq, noise_std, temp_psz, model_temporal):
 	denframes = torch.empty((numframes, C, H, W)).to(seq.device)
 
 	# build noise map from noise std---assuming Gaussian noise
-	noise_map = noise_std.expand((1, 1, H, W))
+	# noise_map = noise_std.expand((1, 1, H, W))
 
 	for fridx in range(numframes):
 		# load input frames
@@ -67,7 +67,8 @@ def denoise_seq_fastdvdnet(seq, noise_std, temp_psz, model_temporal):
 		inframes_t = torch.stack(inframes, dim=0).contiguous().view((1, temp_psz*C, H, W)).to(seq.device)
 
 		# append result to output list
-		denframes[fridx] = temp_denoise(model_temporal, inframes_t, noise_map)
+		# denframes[fridx] = temp_denoise(model_temporal, inframes_t, noise_map)
+		denframes[fridx] = temp_denoise(model_temporal, inframes_t, noise_std)
 
 	# free memory up
 	del inframes
