@@ -164,7 +164,12 @@ class FastDVDnet(nn.Module):
 			noise_map: Tensor [N, 1, H, W] in the [0., 1.] range
 		'''
 		# Unpack inputs
-		(x0, x1, x2, x3, x4) = tuple(x[:, 3*m:3*m+3, :, :] for m in range(self.num_input_frames))
+		# (x0, x1, x2, x3, x4) = tuple(x[:, 3*m:3*m+3, :, :] for m in range(self.num_input_frames))
+		x0 = x[:, 3*0:3*0+3, :, :]
+		x1 = x[:, 3*1:3*1+3, :, :]
+		x2 = x[:, 3*2:3*2+3, :, :]
+		x3 = x[:, 3*3:3*3+3, :, :]
+		x4 = x[:, 3*4:3*4+3, :, :]
 
 		# First stage
 		x20 = self.temp1(x0, x1, x2, noise_map)
